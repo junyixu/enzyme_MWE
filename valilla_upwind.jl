@@ -39,5 +39,29 @@ function jacobian_ad_forward_enzyme_cache_upwind_right(x::AbstractVector)
 end
 
 x = -1.0:0.01:1.0
-jacobian_ad_forward_enzyme_cache_upwind_right(x)
+@time jacobian_ad_forward_enzyme_cache_upwind_right(x);
 
+
+# %%
+
+function gradients_ad_forward_enzyme_cache_upwind(x::AbstractVector)
+    u_ode = zeros(length(x))
+    du_ode = zeros(length(x))
+    cache = Cache(1.0, zeros(length(x)))
+
+    dy = zeros(size(du_ode))
+    dx = zeros(size(u_ode))
+    cache_shadow = Cache(1.0, zeros(length(x)))
+    dys = zeros(length(du_ode), length(du_ode))
+
+    for i in 1:length(x)
+        dx .= 0.0
+        dx[i] = 1.0
+        # cache is passed to upwind!
+        Enzyme.autodiff(Enzyme.Forward, upwind!, Enzyme.Duplicated(du_ode, dy), Enzyme.Duplicated(u_ode, dx), Enzyme.Duplicated(cache, cache_shadow))
+        dys[:, i] .= dy
+    end
+    return dys
+end
+
+@time gradients_ad_forward_enzyme_cache_upwind(x);
