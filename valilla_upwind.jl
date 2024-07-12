@@ -33,6 +33,15 @@ function upwind!(du::Vector, u::Vector, v, numerical_flux)
     return nothing # important for reverse mode AD
 end
 
+function upwind!(du::Vector, u::Vector)
+    v = 1.0
+    numerical_flux = u * v
+	for i = 2:length(u)
+        du[i] = - C * (numerical_flux[i] - numerical_flux[i-1])  # Q_j^{n+1} = Q_j^n - Δt/Δx * ( F_{j+1/2}^n - F_{j-1/2}^n )
+	end
+    du[1] = - C * (numerical_flux[1] - numerical_flux[end])
+    return nothing
+end
 
 function jacobian_ad_forward_enzyme_cache_upwind_right(x::AbstractVector)
     u_ode = zeros(length(x))
@@ -73,6 +82,31 @@ function gradients_ad_forward_enzyme_cache_upwind(x::AbstractVector)
     end
     return dys
 end
+# %%
+# https://github.com/EnzymeAD/Enzyme.jl/pull/1545/files
+function pick_batchsize(x)
+    totalsize = length(x)
+    return min(totalsize, 16)
+end
+function jacobian_ad_forward_enzyme_cache_upwind(x::AbstractVector, ::Val{chunk};
+    dy = chunkedonehot(x, Val(chunk)),
+    dx = chunkedonehot(x, Val(chunk))
+    ) where {chunk}
+   if chunk == 0
+        throw(ErrorException("Cannot differentiate with a batch size of 0"))
+    end
+    u_ode = zeros(length(x))
+    du_ode = zeros(length(x))
+
+    tmp = ntuple(length(dx)) do i
+        Enzyme.autodiff(Enzyme.Forward, upwind!, Enzyme.BatchDuplicated(du_ode, dy[i]), Enzyme.BatchDuplicated(u_ode, dx[i]))
+        dy[i]
+    end
+
+    cols = Enzyme.tupleconcat(tmp...)
+    return reduce(hcat, cols)
+end
+@time J2 =jacobian_ad_forward_enzyme_cache_upwind(x, Val(pick_batchsize(x)));
 # %%
 
 function gradients_ad_reverse_enzyme_cache_upwind(x::AbstractVector)
